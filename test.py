@@ -1,4 +1,4 @@
-import sys
+import sys 
 import json
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
@@ -77,11 +77,12 @@ class Polygon:
 class Canvas(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.shapes = []  # list of Polygon objects
+        self.shapes = []
         self.selected_index = None
         self.setMinimumSize(600, 400)
         self.setMouseTracking(True)
         self.dragging_point_index = None
+        self.selected_points = []
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -89,6 +90,7 @@ class Canvas(QWidget):
 
         pen_normal = QPen(Qt.black, 2)
         pen_selected = QPen(Qt.red, 3)
+
         for i, shape in enumerate(self.shapes):
             pen = pen_selected if i == self.selected_index else pen_normal
             painter.setPen(pen)
@@ -100,12 +102,19 @@ class Canvas(QWidget):
                     painter.drawEllipse(pts[j], 4, 4)
                     if j < len(pts) - 1:
                         painter.drawLine(pts[j], pts[j + 1])
-                # close polygon
                 if len(pts) > 2:
                     painter.drawLine(pts[-1], pts[0])
 
+        # tymczasowe niebieskie linie
+        if len(self.selected_points) >= 2:
+            pen_temp = QPen(Qt.blue, 1, Qt.DashLine)
+            painter.setPen(pen_temp)
+            for i in range(len(self.selected_points) - 1):
+                p1 = self.selected_points[i]
+                p2 = self.selected_points[i + 1]
+                painter.drawLine(QPointF(p1.x, p1.y), QPointF(p2.x, p2.y))
+
     def mousePressEvent(self, event):
-        # Check if clicked near any point to select shape or drag point
         pos = event.pos()
         for i, shape in enumerate(self.shapes):
             for j, p in enumerate(shape.points):
@@ -118,6 +127,17 @@ class Canvas(QWidget):
         self.selected_index = None
         self.update()
 
+    def mouseDoubleClickEvent(self, event):
+        pos = event.pos()
+        for shape in self.shapes:
+            for p in shape.points:
+                dist = math.hypot(p.x - pos.x(), p.y - pos.y())
+                if dist < 8:
+                    if p not in self.selected_points:
+                        self.selected_points.append(p)
+                        self.update()
+                    return
+
     def mouseMoveEvent(self, event):
         if self.dragging_point_index is not None and self.selected_index is not None:
             pos = event.pos()
@@ -128,6 +148,15 @@ class Canvas(QWidget):
 
     def mouseReleaseEvent(self, event):
         self.dragging_point_index = None
+
+    def connect_selected_points(self):
+        if len(self.selected_points) >= 2:
+            new_shape = Polygon(self.selected_points.copy())
+            self.shapes.append(new_shape)
+            self.selected_points.clear()
+            self.update()
+            return new_shape
+        return None
 
 
 # --- Main Application Window ---
@@ -142,6 +171,7 @@ class MainWindow(QWidget):
         self.list_shapes = QListWidget()
         self.btn_add_point = QPushButton("Dodaj punkt")
         self.btn_add_polygon = QPushButton("Dodaj wielokąt")
+        self.btn_connect_points = QPushButton("Połącz punkty")  # nowy przycisk
         self.btn_delete_shape = QPushButton("Usuń wybrany")
         self.btn_translate = QPushButton("Translacja")
         self.btn_scale = QPushButton("Skalowanie")
@@ -156,7 +186,7 @@ class MainWindow(QWidget):
         self.input_sy = QLineEdit("1")
         self.input_angle = QLineEdit("0")
 
-        self.history = []  # do undo
+        self.history = []
 
         self._setup_ui()
         self._connect_signals()
@@ -165,10 +195,8 @@ class MainWindow(QWidget):
         layout = QHBoxLayout()
         self.setLayout(layout)
 
-        # Left: canvas
         layout.addWidget(self.canvas, 3)
 
-        # Right: controls
         control_layout = QVBoxLayout()
         layout.addLayout(control_layout, 1)
 
@@ -176,6 +204,7 @@ class MainWindow(QWidget):
         control_layout.addWidget(self.list_shapes)
         control_layout.addWidget(self.btn_add_point)
         control_layout.addWidget(self.btn_add_polygon)
+        control_layout.addWidget(self.btn_connect_points)  # dodany przycisk
         control_layout.addWidget(self.btn_delete_shape)
 
         control_layout.addWidget(QLabel("Translacja (dx, dy):"))
@@ -205,6 +234,7 @@ class MainWindow(QWidget):
     def _connect_signals(self):
         self.btn_add_point.clicked.connect(self.add_point)
         self.btn_add_polygon.clicked.connect(self.add_polygon)
+        self.btn_connect_points.clicked.connect(self.connect_points)  # nowy sygnał
         self.btn_delete_shape.clicked.connect(self.delete_shape)
         self.btn_translate.clicked.connect(self.translate_shape)
         self.btn_scale.clicked.connect(self.scale_shape)
@@ -214,6 +244,12 @@ class MainWindow(QWidget):
         self.btn_load.clicked.connect(self.load_from_file)
         self.list_shapes.currentRowChanged.connect(self.select_shape)
         self.canvas.mouseReleaseEvent = self.on_canvas_mouse_release
+
+    def connect_points(self):
+        new_shape = self.canvas.connect_selected_points()
+        if new_shape:
+            self.list_shapes.addItem("Połączone punkty")
+            self.save_history()
 
     def add_point(self):
         p = Polygon([Point(100, 100)])
@@ -367,5 +403,4 @@ def main():
 
 
 if __name__ == "__main__":
-
     main()
